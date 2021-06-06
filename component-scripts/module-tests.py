@@ -37,6 +37,11 @@ if __name__ == "__main__":
     led.start()
     camera = ThreadWithReturnValue(
         target=capture,
+        args=(
+            [
+                "captured_card.jpg",
+            ],
+        ),
     )
     camera.start()
 
