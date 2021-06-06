@@ -4,7 +4,7 @@ import RPi.GPIO as GPIO
 import atexit
 import time
 
-def blinkLed(duration: int):
+def blinkLed(duration: float):
     RED.start(pwm_freq)
     GREEN.start(pwm_freq)
     BLUE.start(pwm_freq)
