@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5 import uic
 from led import blinkLed
+from config import Config
 from camera import capture
 from threading import Thread
 from servo import rotateServo
@@ -14,7 +15,7 @@ from functools import partial
 
 import RPi.GPIO as GPIO
 import subprocess
-import importlib  
+import importlib
 import atexit
 import time
 import sys
@@ -40,9 +41,10 @@ class ThreadWithReturnValue(Thread):
         return self._return
 
 
-class Sensor():
+class Sensor:
     def __init__(self):
         self.__threads = []
+        self.__config = Config()
         self.__model = importlib.import_module("machine-learning.facial-ocr.combined")
 
     def addThread(self, target, args):
@@ -62,15 +64,17 @@ class Sensor():
         self.__threads = [t for t in self.__threads if not t.handled]
 
     def joinThreads(self):
-        _ = [t.join() for t in self.__threads]
+        res = [t.join() for t in self.__threads]
         self.cleanThreads()
+
+        return res
 
     def runLed(self, duration):
         self.addThread(
             target=blinkLed,
             args=(duration,),
         )
-    
+
     def runCamera(self, files):
         self.addThread(
             target=capture,
@@ -86,14 +90,18 @@ class Sensor():
     def runScanSequence(self) -> bool:
         # Capture the ID Card
         self.runLed(1.5)
-        self.runCamera(["captured_card.jpg",])
+        self.runCamera(
+            [
+                self.__config["filename"],
+            ]
+        )
 
         # Wait for capturing finished
         self.joinThreads()
 
         # TODO
         # Get the NIK and compare to database
-
+        nik = self.getIdCardData(self.__config["filename"], "nik")
 
         # Push the ID Card out
         self.runServo(4)
@@ -101,14 +109,34 @@ class Sensor():
         # Wait for all process finished
         self.joinThreads()
 
-        # Wait for 3 seconds before
-        # setting up the servo for next scan
-        time.sleep(3)
-        self.runServo(11)
-
         # TODO
         # Return value based on comparison
         return False
+
+    def openSpace(self):
+        """
+        Rotate the servo to let the
+        ID Card get into the cartridge
+        """
+        self.runServo(11)
+
+    def getIdCardData(self, image, what: str):
+        x1, y1, x2, y2 = self.__config[what]
+        return self.__model.getKtpData(image, x1, y1, x2, y2)
+
+    def scanFace(self):
+        x1, y1, x2, y2 = self.__config["face"]
+        image = self.__config["filename"]
+        self.addThread(
+            target=self.__model.isFaceMatch,
+            args=(
+                image,
+                x1,
+                y1,
+                x2,
+                y2,
+            ),
+        )
 
 
 class UI(QMainWindow):
@@ -127,7 +155,19 @@ class UI(QMainWindow):
     def sensor(self):
         return self.__sensor
 
-    def setState(self, state):
+    @property
+    def condition(self, state):
+        try:
+            res = self.__condition[state]
+            return res
+        except:
+            return False
+
+    def setCondition(self, state: int, condition: bool):
+        if 0 <= state <= 4:
+            self.__condition[state] = condition
+
+    def setState(self, state: int):
         """
         Set current state of the application
 
@@ -162,9 +202,7 @@ class UI(QMainWindow):
             QPushButton,
             "StartButton",
         )
-        self.__uidata["start_button"].clicked.connect(
-            partial(self.nextPage, self.__uidata["container"].currentIndex(), 1)
-        )
+        self.__uidata["start_button"].clicked.connect(partial(self.nextPage, 1))
 
         # Scan Button
         self.__uidata["scan_button"] = getChild(
@@ -172,18 +210,27 @@ class UI(QMainWindow):
             QPushButton,
             "ScanButton",
         )
-        self.__uidata["scan_button"].clicked.connect(
-            partial(self.nextPage, self.__uidata["container"].currentIndex(), 2)
-        )
+        self.__uidata["scan_button"].clicked.connect(partial(self.nextPage, 2))
 
-    def nextPage(self, currentPageIndex, nextState):
+    def nextPage(self, nextState):
 
         # Scan the ID Card first
-        if self.state == 1:
-            self.sensor.runScanSequence()
+        if nextState == 0:
+            self.sensor.openSpace()
+        elif nextState == 2:
+            res = self.sensor.runScanSequence()
+            self.setCondition(res)
+        elif nextState == 4:
+            self.sensor.scanFace()
+            
+            # TODO
+            # update the UI accordingly
+
+            res = self.sensor.joinThreads()
+            self.setCondition(res)
 
         # Go to next state if every process above completed successfully
-        self.__uidata["container"].setCurrentIndex(currentPageIndex + 1)
+        self.__uidata["container"].setCurrentIndex(nextState)
         self.setState(nextState)
 
 
