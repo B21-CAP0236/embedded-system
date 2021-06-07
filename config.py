@@ -2,8 +2,9 @@ class Config:
     def __init__(self):
         self.__configuration = {
             "filename": "captured_card.jpg",
-            "nik": [600, 800, 860, 2230],
-            "face": [670, 1620, 2300, 3100],
+            "nik": [210, 270, 0, 520],
+            "nama": [285, 325, 20, 500],
+            "face": [215, 590, 500, 800],
         }
 
     @property
