@@ -1,4 +1,4 @@
-from config import pins
+from .config import pins
 
 import RPi.GPIO as GPIO
 import atexit
