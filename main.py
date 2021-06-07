@@ -6,12 +6,13 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from PyQt5 import uic
-from led import blinkLed
 from config import Config
-from camera import capture
 from threading import Thread
-from servo import rotateServo
 from functools import partial
+
+from component_scripts.led import blinkLed
+from component_scripts.camera import capture
+from component_scripts.servo import rotateServo
 
 import RPi.GPIO as GPIO
 import subprocess
