@@ -13,7 +13,7 @@ def rotateServo(to_rotation: float):
     Param:
         to_rotation = In our hardware,
             4 means push the ID Card off
-            11 means let the ID Card in
+            12 means let the ID Card in
     """
     servo.ChangeDutyCycle(to_rotation)
     time.sleep(0.5)
