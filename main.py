@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from PyQt5.QtCore import (
-    QThread, 
+    QThread,
     pyqtSignal,
     pyqtSlot,
 )
@@ -22,7 +22,7 @@ from PyQt5.QtGui import (
 
 from PyQt5 import uic
 from config import Config
-from threading import Thread, current_thread
+from threading import Thread
 from functools import partial
 
 from component_scripts.led import blinkLed
@@ -61,7 +61,9 @@ class CameraThread(QThread):
         x1, y1, x2, y2 = self.__config["face"]
         image = self.__config["filename"]
 
-        self.__result = self.__model.isFaceMatch(image, x1, y1, x2, y2, show=False, signal=self._signal)
+        self.__result = self.__model.isFaceMatch(
+            image, x1, y1, x2, y2, show=False, signal=self._signal
+        )
 
 
 class ThreadWithReturnValue(Thread):
@@ -83,7 +85,7 @@ class ThreadWithReturnValue(Thread):
 class Sensor:
     def __init__(self, backend):
         self.__threads = []
-        self.__config = Config()
+        self.__config = Config().configuration
         self.__model = importlib.import_module("machine-learning.facial-ocr.combined")
 
         self.setBackend(backend)
@@ -150,8 +152,10 @@ class Sensor:
         nik = self.getIdCardData(self.__config["filename"], "nik")
         recipients = self.backend.getAvailableRecipients(self.__config["bansos_id"])
 
-        ratios = [list(self.__model.similar(x["nik"], nik), x["nama"], x["id"]) for x in recipients]
-        print("ratio = {}".format(ratios))
+        ratios = [
+            list([self.__model.similar(x["nik"], nik), x["nama"], x["id"]])
+            for x in recipients
+        ]
         ratios = sorted(ratios)[0]
 
         # Push the ID Card out
@@ -160,8 +164,11 @@ class Sensor:
         # Wait for all process finished
         self.joinThreads()
 
-        isVerified = ratios[0] > 0.9
-        return (isVerified, list(ratios[1], ratios[2]) if isVerified else nik)
+        if len(ratios) > 0:
+            isVerified = ratios[0] > 0.8
+            return (isVerified, list([ratios[1], ratios[2]]) if isVerified else nik)
+        else:
+            return None
 
     def openSpace(self):
         """
@@ -233,10 +240,7 @@ class Backend:
         self.setCookie(response.text)
 
     def addTransaction(self, bansos_id):
-        data = json.dumps({
-            "bansos_id": bansos_id,
-            "receipient_id": self.uid
-        })
+        data = json.dumps({"bansos_id": bansos_id, "receipient_id": self.uid})
 
         _ = requests.post(
             "https://anantara.hasura.app/api/rest/add/transaction",
@@ -279,13 +283,18 @@ class Backend:
         )
 
         result = self.client.execute(query)
-        return [x["receipient"] for x in result["receipientMap"]]
+        if len(result["receipientMap"]) > 0:
+            return [x["receipient"] for x in result["receipientMap"]]
+        else:
+            return None
 
 
 class UI(QMainWindow):
     def __init__(self, backend):
         super(UI, self).__init__()
         uic.loadUi("ui-components/application.ui", self)
+
+        self.__condition = dict()
 
         self.setState(0)
         self.initializeUI()
@@ -317,9 +326,13 @@ class UI(QMainWindow):
             if self.condition(state):
                 self.uidata["failed_text"].hide()
                 self.uidata["success_text"].show()
+                self.uidata["back_button"].hide()
+                self.uidata["next_button"].show()
             else:
                 self.uidata["failed_text"].show()
                 self.uidata["success_text"].hide()
+                self.uidata["back_button"].show()
+                self.uidata["next_button"].hide()
         elif state == 3:
             if self.condition(state):
                 self.uidata["not_verified_text"].hide()
@@ -328,7 +341,6 @@ class UI(QMainWindow):
                 self.uidata["not_verified_texts"].show()
                 self.uidata["verified_text"].hide()
 
-    @property
     def condition(self, state):
         try:
             res = self.__condition[state]
@@ -394,6 +406,20 @@ class UI(QMainWindow):
             "SuccessText",
         )
 
+        # Next and Back Button
+        self.__uidata["next_button"] = getChild(
+            getChild(self.__uidata["container"], QWidget, "VerificationPage"),
+            QPushButton,
+            "NextButton",
+        )
+        self.__uidata["back_button"] = getChild(
+            getChild(self.__uidata["container"], QWidget, "VerificationPage"),
+            QPushButton,
+            "BackButton",
+        )
+        self.__uidata["next_button"].clicked.connect(partial(self.nextPage, 3))
+        self.__uidata["back_button"].clicked.connect(partial(self.nextPage, 0))
+
         # Image Viewer and Progress Bar
         self.__uidata["image_viewer"] = getChild(
             getChild(self.__uidata["container"], QWidget, "PhotoScanPage"),
@@ -433,12 +459,16 @@ class UI(QMainWindow):
 
             self.uidata["container"].setCurrentIndex(0)
             self.setState(0)
+
+        elif currentPage == 3:
+            self.nextPage(4)
+            
         elif currentPage == 0:
             # Let another ID Card in
             self.__sensor.runServo(4)
 
             # Wait for all process finished
-            self.joinThreads()
+            self.__sensor.joinThreads()
 
     def nextPage(self, nextState):
 
@@ -446,7 +476,15 @@ class UI(QMainWindow):
         if nextState == 0:
             self.sensor.openSpace()
         elif nextState == 2:
-            isVerified, data = self.sensor.runScanSequence()
+            result = self.sensor.runScanSequence()
+
+            try:
+                isVerified, data = result
+            except:
+                self.sensor.runServo(12)
+                self.sensor.joinThreads()
+                sys.exit("Error happened, call engineer")
+
             self.setCondition(self.state, isVerified)
 
             if isVerified:
@@ -468,7 +506,7 @@ class UI(QMainWindow):
             # Send transaction to the cloud
             # if it completed successfully
             if self.condition(self.state):
-                config = Config()
+                config = Config().configuration
                 self.backend.addTransaction(config["bansos_id"])
 
         # Go to next state if every process above completed successfully
@@ -479,7 +517,7 @@ class UI(QMainWindow):
     def updateCamera(self, progress, image):
         scene = QGraphicsScene(self)
         item = QGraphicsPixmapItem(QPixmap.fromImage(image))
-        
+
         scene.addItem(item)
 
         self.__uidata["image_viewer"].setScene(scene)
