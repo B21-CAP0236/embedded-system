@@ -43,6 +43,15 @@ def getChild(parent, type, id):
     return parent.findChild(type, id)
 
 
+def natural_keys(text):
+    """
+    alist.sort(key=natural_keys) sorts in human order
+    http://nedbatchelder.com/blog/200712/human_sorting.html
+    (See Toothy's implementation in the comments)
+    """
+    return [ float(c) if isinstance(c, float) else c for c in text ]
+
+
 class CameraThread(QThread):
     signal = pyqtSignal(int, QImage, int, bool)
 
@@ -166,9 +175,11 @@ class Sensor:
                 list([self.__model.similar(x["nik"], nik), x["nama"], x["id"]])
                 for x in recipients
             ]
-            ratios = sorted(ratios)[0]
         except:
             pass
+
+        ratios.sort(key=natural_keys, reverse = True)
+        ratios = ratios[0]
 
         # Push the ID Card out
         self.runServo(4)
