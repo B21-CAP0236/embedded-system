@@ -4,7 +4,7 @@ anANTara project relies mainly on the vending machine which built by this embedd
 
 However, we have not created the storage system yet because our main focus for the MVP is just the authentication system that is consisting of OCR and Facial Recognition system that already built in the machine learning submodule.
 
-We also print the 3d model of the authentication system casing, so everything are already setup in a good way and ready to rock, its just that we are currently lacking the storage sytem that makes the system not fully automated in case of sharing the social assistance itself, but its just a matter of time (and money) to create the storage system and make a fully automated vending machine that could be used for a "self-service social assistance sharing system".
+We also print the [3d model of the authentication system casing](./3d-model/anantara.stl), so everything are already setup in a good way and ready to rock, its just that we are currently lacking the storage sytem that makes the system not fully automated in case of sharing the social assistance itself, but its just a matter of time (and money) to create the storage system and make a fully automated vending machine that could be used for a "self-service social assistance sharing system".
 
 ## Feature(s)
 
@@ -44,6 +44,7 @@ These are features that available for embedded system part :
 - [Logitech Webcam C270 HD](https://www.tokopedia.com/goldenmouse/logitech-webcam-c270-hd-only-webcam-sja) to capture the recipient's face
 - [Power Supply Adaptor Switching LED 12V 3A](https://www.tokopedia.com/snapshot_product?order_id=676702974&dtl_id=1010950084) to power up the DC FAN
 - [FAN DC 12 VOLT 8x8x2.5CM](https://www.tokopedia.com/cncstorebandung/fan-dc-12-volt-8x8x2-5cm) to cool things up
+- [Motor Servo Sg90](https://www.tokopedia.com/cncstorebandung/cnc-towerpro-motor-servo-sg90-sg-90-9g) to move the ID Card in or out (setting up for the cartridge mechanism)
 
 ### How to Contribute
 
