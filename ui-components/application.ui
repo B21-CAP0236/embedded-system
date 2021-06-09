@@ -422,7 +422,17 @@ p, li { white-space: pre-wrap; }
         </widget>
        </item>
        <item>
-        <widget class="QGraphicsView" name="ImageViewer"/>
+        <widget class="QLabel" name="ImageViewer">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+         <property name="text">
+          <string></string>
+         </property>
+        </widget>
        </item>
        <item>
         <widget class="QProgressBar" name="ScanLoader">
