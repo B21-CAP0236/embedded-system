@@ -1,3 +1,5 @@
+![20210609_120532](https://user-images.githubusercontent.com/18365721/121311910-0fc2c280-c92f-11eb-8071-23ed9e91bf79.jpg)
+
 # **anANTara** embedded system
 
 anANTara project relies mainly on the vending machine which built by this embedded system repository, this contains processes that are happening when a bansos recipient want to authenticate themselves to get social assistance.
