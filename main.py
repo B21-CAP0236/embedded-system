@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import (
     QThread,
+    QTimer,
     pyqtSignal,
     pyqtSlot,
 )
@@ -32,12 +33,9 @@ from component_scripts.servo import rotateServo
 from gql import Client, gql
 from gql.transport.requests import RequestsHTTPTransport
 
-import RPi.GPIO as GPIO
 import importlib
 import requests
-import atexit
 import json
-import time
 import sys
 
 
@@ -46,13 +44,20 @@ def getChild(parent, type, id):
 
 
 class CameraThread(QThread):
-    _signal = pyqtSignal(int, QImage)
+    signal = pyqtSignal(int, QImage, int, bool)
 
     def __init__(self, model, config):
         super().__init__()
         self.__model = model
         self.__config = config
-        self.__result = None
+        self.setResult(None)
+
+    def setResult(self, result):
+        self.__result = result
+
+    @property
+    def result(self):
+        return self.__result
 
     def __del__(self):
         self.wait()
@@ -61,9 +66,10 @@ class CameraThread(QThread):
         x1, y1, x2, y2 = self.__config["face"]
         image = self.__config["filename"]
 
-        self.__result = self.__model.isFaceMatch(
-            image, x1, y1, x2, y2, show=False, signal=self._signal
+        res = self.__model.isFaceMatch(
+            image, x1, y1, x2, y2, show=False, signal=self.signal
         )
+        self.setResult(res)
 
 
 class ThreadWithReturnValue(Thread):
@@ -83,7 +89,8 @@ class ThreadWithReturnValue(Thread):
 
 
 class Sensor:
-    def __init__(self, backend):
+    def __init__(self, backend, ui):
+        self.__ui = ui
         self.__threads = []
         self.__config = Config().configuration
         self.__model = importlib.import_module("machine-learning.facial-ocr.combined")
@@ -150,13 +157,18 @@ class Sensor:
         self.joinThreads()
 
         nik = self.getIdCardData(self.__config["filename"], "nik")
-        recipients = self.backend.getAvailableRecipients(self.__config["bansos_id"])
 
-        ratios = [
-            list([self.__model.similar(x["nik"], nik), x["nama"], x["id"]])
-            for x in recipients
-        ]
-        ratios = sorted(ratios)[0]
+        ratios = []
+        try:
+            recipients = self.backend.getAvailableRecipients(self.__config["bansos_id"])
+
+            ratios = [
+                list([self.__model.similar(x["nik"], nik), x["nama"], x["id"]])
+                for x in recipients
+            ]
+            ratios = sorted(ratios)[0]
+        except:
+            pass
 
         # Push the ID Card out
         self.runServo(4)
@@ -175,20 +187,38 @@ class Sensor:
         Rotate the servo to let the
         ID Card get into the cartridge
         """
-        self.runServo(11)
+        self.runServo(12)
+        self.joinThreads()
 
     def getIdCardData(self, image, what: str):
         x1, y1, x2, y2 = self.__config[what]
         return self.__model.getKtpData(image, x1, y1, x2, y2)
 
-    def scanFace(self, callback_function):
-        self.__camthread = CameraThread(self.__model, self.__config)
-        self.__camthread._signal.connect(callback_function)
-        self.__camthread.start()
+    def scanFace(self):
+        self.camthread = CameraThread(self.__model, self.__config)
+        self.camthread.signal.connect(self.updateCamera)
+        self.camthread.start()
+    
+    def updateCamera(self, progress, image, delay, isFinished):
+        threshold = 3
+        max_delay = 25
+        if not isFinished:
+            if (delay % (max_delay // threshold)) == 0:
+                self.__ui.uidata["image_viewer"].setPixmap(QPixmap.fromImage(image))
+                self.__ui.uidata["progress_bar"].setValue(progress)
 
-        while True:
-            if self.__camthread.__result != None:
-                return self.__camthread.__result
+        if isFinished:
+            QTimer.singleShot(2500, self.completeCameraProcess)
+
+    def completeCameraProcess(self):
+        self.__ui.setCondition(self.__ui.state, self.camthread.result)
+
+        # Send transaction to the cloud
+        # if it completed successfully
+        if self.__ui.condition(self.__ui.state):
+            self.backend.addTransaction(self.__config["bansos_id"])
+
+        self.__ui.nextPage(5)
 
 
 class Backend:
@@ -299,7 +329,7 @@ class UI(QMainWindow):
         self.setState(0)
         self.initializeUI()
         self.setBackend(backend)
-        self.setupSensor(backend)
+        self.setupSensor(backend, self)
 
     def setBackend(self, backend):
         self.__backend = backend
@@ -308,8 +338,8 @@ class UI(QMainWindow):
     def backend(self):
         return self.__backend
 
-    def setupSensor(self, backend):
-        self.__sensor = Sensor(backend)
+    def setupSensor(self, backend, ui):
+        self.__sensor = Sensor(backend, ui)
 
     @property
     def sensor(self):
@@ -338,7 +368,7 @@ class UI(QMainWindow):
                 self.uidata["not_verified_text"].hide()
                 self.uidata["verified_text"].show()
             else:
-                self.uidata["not_verified_texts"].show()
+                self.uidata["not_verified_text"].show()
                 self.uidata["verified_text"].hide()
 
     def condition(self, state):
@@ -423,7 +453,7 @@ class UI(QMainWindow):
         # Image Viewer and Progress Bar
         self.__uidata["image_viewer"] = getChild(
             getChild(self.__uidata["container"], QWidget, "PhotoScanPage"),
-            QGraphicsView,
+            QLabel,
             "ImageViewer",
         )
         self.__uidata["progress_bar"] = getChild(
@@ -452,23 +482,12 @@ class UI(QMainWindow):
         return self.__uidata
 
     def checkPage(self):
-        currentPage = self.__uidata["container"].currentIndex()
+        currentPage = self.uidata["container"].currentIndex()
 
         if currentPage == 4:
-            time.sleep(5)
-
-            self.uidata["container"].setCurrentIndex(0)
-            self.setState(0)
-
+            QTimer.singleShot(10000, partial(self.nextPage, 0))
         elif currentPage == 3:
-            self.nextPage(4)
-            
-        elif currentPage == 0:
-            # Let another ID Card in
-            self.__sensor.runServo(4)
-
-            # Wait for all process finished
-            self.__sensor.joinThreads()
+            QTimer.singleShot(3000, partial(self.nextPage, 4))
 
     def nextPage(self, nextState):
 
@@ -500,32 +519,17 @@ class UI(QMainWindow):
                 self.uidata["success_text"].text().replace(r"{{ receipient }}", nik)
             )
         elif nextState == 4:
-            res = self.sensor.scanFace(self.updateCamera)
-            self.setCondition(self.state, res)
-
-            # Send transaction to the cloud
-            # if it completed successfully
-            if self.condition(self.state):
-                config = Config().configuration
-                self.backend.addTransaction(config["bansos_id"])
+            self.sensor.scanFace()
+            return
+        elif nextState == 5:
+            # Special case for camera thread problem (hot fix)
+            self.uidata["container"].setCurrentIndex(4)
+            self.setState(4)
+            return
 
         # Go to next state if every process above completed successfully
         self.uidata["container"].setCurrentIndex(nextState)
         self.setState(nextState)
-
-    @pyqtSlot(int, QImage)
-    def updateCamera(self, progress, image):
-        scene = QGraphicsScene(self)
-        item = QGraphicsPixmapItem(QPixmap.fromImage(image))
-
-        scene.addItem(item)
-
-        self.__uidata["image_viewer"].setScene(scene)
-        self.__uidata["progress_bar"].setValue(progress)
-
-
-def cleanup():
-    GPIO.cleanup()
 
 
 def main():
@@ -546,6 +550,4 @@ def main():
 
 
 if __name__ == "__main__":
-    atexit.register(cleanup)
-
     main()
